@@ -14,6 +14,8 @@ enum class NodeType
 	ASSIGN,
 	VARDECL,
 	EXP_SEQUENCE,
+	COMMA,
+	CALL,
 };
 
 enum class BaseType

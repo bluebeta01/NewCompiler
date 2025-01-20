@@ -7,6 +7,8 @@ int node_precedence(NodeType type)
 	case NodeType::IDENTIFIER:
 	case NodeType::INT_LITERAL:
 		return 100;
+	case NodeType::CALL:
+		return 95;
 	case NodeType::REFERENCE:
 	case NodeType::DEREFERECE:
 		return 90;
@@ -19,6 +21,8 @@ int node_precedence(NodeType type)
 		return 65;
 	case NodeType::ASSIGN:
 		return 60;
+	case NodeType::COMMA:
+		return 50;
 	}
 	return 0;
 }
@@ -33,6 +37,7 @@ static bool node_is_operator(NodeType type)
 	case NodeType::DEREFERECE:
 	case NodeType::MULTIPLY:
 	case NodeType::ASSIGN:
+	case NodeType::COMMA:
 		return true;
 	}
 
@@ -129,6 +134,12 @@ static Node* token_to_node(const std::vector<Token*>& tokens, int* index)
 			.type = NodeType::ASSIGN,
 			.token = token
 		};
+	case TokenType::COMMA:
+		return new Node
+		{
+			.type = NodeType::COMMA,
+			.token = token
+		};
 	case TokenType::AMP:
 		return new Node
 		{
@@ -172,6 +183,15 @@ static Node* token_to_node(const std::vector<Token*>& tokens, int* index)
 		return nullptr;
 	}
 	case TokenType::IDENTIFIER:
+		if (*index + 1 < tokens.size() && tokens[*index + 1]->type == TokenType::OPEN_PAREN)
+		{
+			return new Node
+			{
+				.type = NodeType::CALL,
+				.token = token,
+				.paren = true
+			};
+		}
 		Node n = {};
 		if (parse_vardecl_node(tokens, index, &n))
 		{
@@ -195,6 +215,7 @@ static bool node_is_right_only(NodeType type)
 	{
 	case NodeType::REFERENCE:
 	case NodeType::DEREFERECE:
+	case NodeType::CALL:
 		return true;
 	}
 
@@ -220,15 +241,15 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 			(*index)++;
 			node = parse_tree(tokens, index);
 
-			if (!node)
-				return tree_head;
-
 			//We should now be on the next token. We don't want to increment on the next continue
 			(*index)--;
 
+			if (!node)
+				continue;
+
 			node->paren = true;
 
-			if (previous_node && node_is_operator(previous_node->type))
+			if (previous_node && (node_is_operator(previous_node->type) || previous_node->type == NodeType::CALL))
 			{
 				previous_node->left = previous_node->right;
 				previous_node->right = node;
@@ -261,6 +282,7 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 		if (tree_head == nullptr)
 		{
 			tree_head = node;
+			previous_node = node;
 			continue;
 		}
 
@@ -274,6 +296,7 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 				active_node->type != NodeType::REFERENCE &&
 				active_node->type != NodeType::DEREFERECE &&
 				active_node->type != NodeType::VARDECL &&
+				!active_node->paren &&
 				active_node->left == nullptr)
 			{
 				active_node->left = active_node->right;
@@ -365,6 +388,12 @@ static void print_tree_recurse(FILE* file, Node* tree, int tabs)
 		break;
 	case NodeType::SUBTRACT:
 		fprintf(file, "%s", "-");
+		break;
+	case NodeType::COMMA:
+		fprintf(file, "%s", ",");
+		break;
+	case NodeType::CALL:
+		fprintf(file, "%s()", tree->token->name);
 		break;
 	case NodeType::EXP_SEQUENCE:
 		fprintf(file, "%s", "seq");

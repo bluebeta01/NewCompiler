@@ -71,6 +71,7 @@ bool tokenize_file(const char* filepath, std::vector<Token*>& tokens)
 			Token* t = new Token
 			{
 				.type = TokenType::COMMA,
+				.flags = TOKEN_FLAG_OPERATOR
 			};
 			tokens.push_back(t);
 			buffer_begin += 1;
