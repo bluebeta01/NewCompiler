@@ -129,11 +129,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\ast.h" />
+    <ClInclude Include="src\parser.h" />
     <ClInclude Include="src\tokenize.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\ast.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\parser.cpp" />
     <ClCompile Include="src\tokenize.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

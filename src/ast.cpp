@@ -15,55 +15,12 @@ int node_precedence(NodeType type)
 	case NodeType::ADD:
 	case NodeType::SUBTRACT:
 		return 70;
+	case NodeType::VARDECL:
+		return 65;
 	case NodeType::ASSIGN:
 		return 60;
 	}
 	return 0;
-}
-
-static Node* token_to_node(Token* token)
-{
-	switch (token->type)
-	{
-	case TokenType::PLUS:
-		return new Node
-		{
-			.type = NodeType::ADD,
-			.token = token
-		};
-	case TokenType::EQUALS:
-		return new Node
-		{
-			.type = NodeType::ASSIGN,
-			.token = token
-		};
-	case TokenType::MINUS:
-		return new Node
-		{
-			.type = NodeType::SUBTRACT,
-			.token = token
-		};
-	case TokenType::STAR:
-		return new Node
-		{
-			.type = NodeType::MULTIPLY,
-			.token = token
-		};
-	case TokenType::INT_LITERAL:
-		return new Node
-		{
-			.type = NodeType::INT_LITERAL,
-			.token = token
-		};
-	case TokenType::IDENTIFIER:
-		return new Node
-		{
-			.type = NodeType::IDENTIFIER,
-			.token = token
-		};
-	}
-
-	return nullptr;
 }
 
 static bool node_is_operator(NodeType type)
@@ -80,6 +37,155 @@ static bool node_is_operator(NodeType type)
 	}
 
 	return false;
+}
+
+static int count_stars(const std::vector<Token*>& tokens, int index)
+{
+	int count = 0;
+	for (; index < tokens.size(); index++)
+		if (tokens[index]->type == TokenType::STAR)
+			count++;
+		else
+			return count;
+	return count;
+}
+
+//Attempts to parse a vardecl node, returs true on sucess and storing result in node
+static bool parse_vardecl_node(const std::vector<Token*>& tokens, int* index, Node* node)
+{
+	int i = *index;
+	node->type = NodeType::VARDECL;
+	node->type_descriptor.ptr_count = 0;
+	Token* token = tokens[i];
+	if (token->type != TokenType::IDENTIFIER)
+		return false;
+	node->token = token;
+
+	i++;
+	if (i >= tokens.size())
+		return false;
+	token = tokens[i];
+
+	if (token->type != TokenType::COLON)
+		return false;
+
+	i++;
+	if (i >= tokens.size())
+		return false;
+	token = tokens[i];
+
+	if (token->type == TokenType::IDENTIFIER)
+	{
+		node->type_descriptor.base_type = BaseType::NOT_EVALUATED;
+		node->type_descriptor.type_name = token->name;
+	}
+	else if (token->type == TokenType::S16)
+	{
+		node->type_descriptor.type_name = token->name;
+		node->type_descriptor.base_type = BaseType::S16;
+	}
+	else
+	{
+		return false;
+	}
+
+	i++;
+	if (i >= tokens.size())
+		return false;
+	token = tokens[i];
+
+	while (token->type == TokenType::STAR)
+	{
+		node->type_descriptor.ptr_count++;
+		i++;
+		if (i >= tokens.size())
+			return false;
+		token = tokens[i];
+	}
+
+	if (token->type == TokenType::SEMICOLON || (token->flags & TOKEN_FLAG_OPERATOR))
+	{
+		*index = i - 1;
+		return true;
+	}
+
+	return false;
+}
+
+static Node* token_to_node(const std::vector<Token*>& tokens, int* index)
+{
+	Token* token = tokens[*index];
+	switch (token->type)
+	{
+	case TokenType::PLUS:
+		return new Node
+		{
+			.type = NodeType::ADD,
+			.token = token
+		};
+	case TokenType::EQUALS:
+		return new Node
+		{
+			.type = NodeType::ASSIGN,
+			.token = token
+		};
+	case TokenType::AMP:
+		return new Node
+		{
+			.type = NodeType::REFERENCE,
+			.token = token
+		};
+	case TokenType::MINUS:
+		return new Node
+		{
+			.type = NodeType::SUBTRACT,
+			.token = token
+		};
+	case TokenType::STAR:
+		if (*index == 0 || tokens[*index - 1]->flags & TOKEN_FLAG_OPERATOR)
+		{
+			return new Node
+			{
+				.type = NodeType::DEREFERECE,
+				.token = token
+			};
+		}
+		return new Node
+		{
+			.type = NodeType::MULTIPLY,
+			.token = token
+		};
+	case TokenType::INT_LITERAL:
+		return new Node
+		{
+			.type = NodeType::INT_LITERAL,
+			.token = token
+		};
+	case TokenType::S16:
+	{
+		Node n = {};
+		if (parse_vardecl_node(tokens, index, &n))
+		{
+			Node* node = new Node(n);
+			return node;
+		}
+		return nullptr;
+	}
+	case TokenType::IDENTIFIER:
+		Node n = {};
+		if (parse_vardecl_node(tokens, index, &n))
+		{
+			Node* node = new Node(n);
+			return node;
+		}
+		return new Node
+		{
+			.type = NodeType::IDENTIFIER,
+			.token = token
+		};
+	}
+
+	return nullptr;
 }
 
 //True if the node type can only have a right child
@@ -102,11 +208,12 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 	for (; *index < tokens.size(); (*index)++)
 	{
 		Token* token = tokens[*index];
-		if (token->type == TokenType::CLOSE_PAREN)
+		if (token->type == TokenType::CLOSE_PAREN || token->type == TokenType::SEMICOLON)
 		{
+			(*index)++;
 			return tree_head;
 		}
-		Node* node = token_to_node(token);
+		Node* node = token_to_node(tokens, index);
 
 		if (token->type == TokenType::OPEN_PAREN)
 		{
@@ -116,6 +223,9 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 			if (!node)
 				return tree_head;
 
+			//We should now be on the next token. We don't want to increment on the next continue
+			(*index)--;
+
 			node->paren = true;
 
 			if (previous_node && node_is_operator(previous_node->type))
@@ -123,10 +233,12 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 				previous_node->left = previous_node->right;
 				previous_node->right = node;
 				node->parent = previous_node;
-				
 				previous_node = node;
+				
 				continue;
 			}
+
+			previous_node = node;
 
 			if (!tree_head)
 			{
@@ -161,6 +273,7 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 				active_node->type != NodeType::IDENTIFIER &&
 				active_node->type != NodeType::REFERENCE &&
 				active_node->type != NodeType::DEREFERECE &&
+				active_node->type != NodeType::VARDECL &&
 				active_node->left == nullptr)
 			{
 				active_node->left = active_node->right;
@@ -235,6 +348,9 @@ static void print_tree_recurse(FILE* file, Node* tree, int tabs)
 	case NodeType::ASSIGN:
 		fprintf(file, "%s", "=");
 		break;
+	case NodeType::VARDECL:
+		fprintf(file, "%s", "decl");
+		break;
 	case NodeType::REFERENCE:
 		fprintf(file, "%s", "ref");
 		break;
@@ -250,13 +366,16 @@ static void print_tree_recurse(FILE* file, Node* tree, int tabs)
 	case NodeType::SUBTRACT:
 		fprintf(file, "%s", "-");
 		break;
+	case NodeType::EXP_SEQUENCE:
+		fprintf(file, "%s", "seq");
+		break;
 	}
 	fwrite("\n", 1, 1, file);
 	if(tree->left)
 		print_tree_recurse(file, tree->left, tabs + 1);
 }
 
-static void print_tree(const char* filepath, Node* tree)
+void print_tree(const char* filepath, Node* tree)
 {
 	if (filepath == nullptr)
 		filepath = "/code/ast.txt";
@@ -271,17 +390,277 @@ static void print_tree(const char* filepath, Node* tree)
 	fclose(file);
 }
 
-bool ast_tokens(const std::vector<Token*>& tokens)
+bool parse_expression(const std::vector<Token*>& tokens, int index, Node** node, int* next_index)
 {
-	int index = 0;
 	Node* tree_head = nullptr;
 
 	tree_head = parse_tree(tokens, &index);
+	if (!tree_head)
+		return false;
 
-	if (tree_head)
+	*next_index = index;
+	*node = tree_head;
+	return true;
+}
+
+bool parse_type(const std::vector<Token*>& tokens, int index, TypeDescriptor* descriptor, int* next_index)
+{
+	Token* token = tokens[index];
+	if (token->type == TokenType::IDENTIFIER)
 	{
-		print_tree(nullptr, tree_head);
+		descriptor->base_type = BaseType::NOT_EVALUATED;
+		descriptor->type_name = token->name;
+	}
+	else if (token->type == TokenType::S16)
+	{
+		descriptor->base_type = BaseType::S16;
+	}
+	else if (token->type == TokenType::VOID)
+	{
+		descriptor->base_type = BaseType::VOID;
+	}
+	else
+	{
+		return false;
 	}
 
-	return false;
+	index++;
+	if (index >= tokens.size())
+		return false;
+	token = tokens[index];
+
+	while (token->type == TokenType::STAR)
+	{
+		descriptor->ptr_count++;
+		index++;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+	}
+
+	*next_index = index;
+	return true;
+}
+
+static bool parse_func_return(const std::vector<Token*>& tokens, int index, int* next_index, FunctionDescriptor* func)
+{
+	Token* token = tokens[index];
+	if (token->type != TokenType::ARROW)
+		return false;
+
+	index++;
+	if (index >= tokens.size())
+		return false;
+	token = tokens[index];
+
+	int n = index;
+	if (!parse_type(tokens, index, &func->return_type, &n))
+	{
+		return false;
+	}
+
+	*next_index = n;
+	return true;
+}
+
+bool parse_func_declaration(const std::vector<Token*>& tokens, int index, FunctionDescriptor* descriptor, int* next_index)
+{
+	Token* token = tokens[index];
+	int n = 0;
+
+	if (token->type != TokenType::IDENTIFIER)
+		return false;
+	descriptor->name = token->name;
+
+	index++;
+	if (index >= tokens.size())
+		return false;
+	token = tokens[index];
+
+	if (token->type != TokenType::COLON)
+		return false;
+
+	index++;
+	if (index >= tokens.size())
+		return false;
+	token = tokens[index];
+
+	if (token->type != TokenType::OPEN_PAREN)
+		return false;
+
+	index++;
+	if (index >= tokens.size())
+		return false;
+	token = tokens[index];
+
+	if (parse_type(tokens, index, &descriptor->this_type_descriptor, &n) &&
+		n < tokens.size() &&
+		(tokens[n]->type == TokenType::COMMA || tokens[n]->type == TokenType::CLOSE_PAREN))
+	{
+		descriptor->has_this = true;
+		index = n;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+	}
+
+	if (token->type == TokenType::CLOSE_PAREN)
+	{
+		index++;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+
+		if (token->type != TokenType::ARROW)
+		{
+			descriptor->return_type.base_type = BaseType::VOID;
+			descriptor->return_type.ptr_count = 0;
+			*next_index = index;
+			return true;
+		}
+
+		if (!parse_func_return(tokens, index, &n, descriptor))
+			return false;
+
+		*next_index = n;
+		return true;
+	}
+
+	if (token->type == TokenType::COMMA)
+	{
+		index++;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+	}
+
+	while (true)
+	{
+		FunctionParameter param = {};
+
+		if (token->type != TokenType::IDENTIFIER)
+			return false;
+
+		param.name = token->name;
+
+		index++;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+
+		if (token->type != TokenType::COLON)
+			return false;
+
+		index++;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+
+		if (!parse_type(tokens, index, &param.type_descriptor, &n))
+			return false;
+
+		descriptor->parameters.push_back(param);
+
+		index = n;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+
+		if (token->type == TokenType::COMMA)
+		{
+			index++;
+			if (index >= tokens.size())
+				return false;
+			token = tokens[index];
+			continue;
+		}
+
+		if (token->type == TokenType::CLOSE_PAREN)
+		{
+			index++;
+			if (index >= tokens.size())
+				return false;
+			token = tokens[index];
+			break;
+		}
+
+		return false;
+	}
+
+	if (token->type != TokenType::ARROW)
+	{
+		descriptor->return_type.base_type = BaseType::VOID;
+		descriptor->return_type.ptr_count = 0;
+		*next_index = index;
+		return true;
+	}
+
+	if (!parse_func_return(tokens, index, &n, descriptor))
+		return false;
+
+	*next_index = n;
+	return true;
+}
+
+//Prepends and expression to head. Possibly replaces the head if it is not a EXP_SEQUENCE node or it is full
+static void prepend_expression(Node** head, Node* expression)
+{
+	if (!*head)
+	{
+		*head = expression;
+		return;
+	}
+
+	if ((*head)->type != NodeType::EXP_SEQUENCE || ((*head)->left != nullptr && (*head)->right != nullptr))
+	{
+		Node* node = new Node{ .type = NodeType::EXP_SEQUENCE };
+		node->right = expression;
+		node->left = *head;
+		(*head)->parent = node;
+		*head = node;
+		return;
+	}
+
+	(*head)->right = expression;
+}
+
+bool parse_function(std::vector<Token*>& tokens, int index, FunctionDescriptor* function, int* next_index)
+{
+	int next = 0;
+	if (!parse_func_declaration(tokens, index, function, &next))
+		return false;
+
+	index = next;
+	if (index >= tokens.size())
+		return false;
+	Token* token = tokens[index];
+
+	if (token->type != TokenType::OPEN_BRACE)
+		return false;
+
+	index++;
+	if (index >= tokens.size())
+		return false;
+	token = tokens[index];
+
+	while (true)
+	{
+		Node* node;
+		if (!parse_expression(tokens, index, &node, &next))
+			return false;
+
+		prepend_expression(&function->node, node);
+
+		index = next;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+
+		if (token->type == TokenType::CLOSE_BRACE)
+			break;
+	}
+
+	index++;
+	*next_index = index;
+	return true;
 }

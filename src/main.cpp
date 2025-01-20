@@ -1,14 +1,14 @@
 #include <stdio.h>
 #include "tokenize.h"
 #include "ast.h"
+#include "parser.h"
 
 int main(int argc, const char* argv[])
 {
-	std::vector<Token*> tokens;
-	if (!tokenize_file("/code/sample.txt", tokens))
+	ParserContext ctx;
+	init_context(&ctx);
+	if (!parse_file(&ctx, "/code/sample.txt"))
 	{
 		return -1;
 	}
-
-	bool result = ast_tokens(tokens);
 }

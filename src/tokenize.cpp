@@ -36,7 +36,17 @@ bool tokenize_file(const char* filepath, std::vector<Token*>& tokens)
 			buffer_begin++;
 			continue;
 		}
-		if (!strcmp("s16", buffer_begin) && buffer_end - buffer_begin > 3 && !isalnum(*(buffer_begin + 3)))
+		if (!strncmp("void", buffer_begin, 4) && buffer_end - buffer_begin > 4 && !isalnum(*(buffer_begin + 4)))
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::VOID
+			};
+			tokens.push_back(t);
+			buffer_begin += 4;
+			continue;
+		}
+		if (!strncmp("s16", buffer_begin, 3) && buffer_end - buffer_begin > 3 && !isalnum(*(buffer_begin + 3)))
 		{
 			Token* t = new Token
 			{
@@ -46,11 +56,53 @@ bool tokenize_file(const char* filepath, std::vector<Token*>& tokens)
 			buffer_begin += 3;
 			continue;
 		}
+		if (!strncmp("->", buffer_begin, 2) && buffer_end - buffer_begin > 2)
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::ARROW
+			};
+			tokens.push_back(t);
+			buffer_begin += 2;
+			continue;
+		}
+		if (*buffer_begin == ',')
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::COMMA,
+			};
+			tokens.push_back(t);
+			buffer_begin += 1;
+			continue;
+		}
+		if (*buffer_begin == ':')
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::COLON,
+			};
+			tokens.push_back(t);
+			buffer_begin += 1;
+			continue;
+		}
+		if (*buffer_begin == ';')
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::SEMICOLON,
+				.flags = TOKEN_FLAG_OPERATOR
+			};
+			tokens.push_back(t);
+			buffer_begin += 1;
+			continue;
+		}
 		if (*buffer_begin == '+')
 		{
 			Token* t = new Token
 			{
-				.type = TokenType::PLUS
+				.type = TokenType::PLUS,
+				.flags = TOKEN_FLAG_OPERATOR
 			};
 			tokens.push_back(t);
 			buffer_begin += 1;
@@ -60,7 +112,8 @@ bool tokenize_file(const char* filepath, std::vector<Token*>& tokens)
 		{
 			Token* t = new Token
 			{
-				.type = TokenType::MINUS
+				.type = TokenType::MINUS,
+				.flags = TOKEN_FLAG_OPERATOR
 			};
 			tokens.push_back(t);
 			buffer_begin += 1;
@@ -70,7 +123,28 @@ bool tokenize_file(const char* filepath, std::vector<Token*>& tokens)
 		{
 			Token* t = new Token
 			{
-				.type = TokenType::STAR
+				.type = TokenType::STAR,
+				.flags = TOKEN_FLAG_OPERATOR
+			};
+			tokens.push_back(t);
+			buffer_begin += 1;
+			continue;
+		}
+		if (*buffer_begin == '{')
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::OPEN_BRACE
+			};
+			tokens.push_back(t);
+			buffer_begin += 1;
+			continue;
+		}
+		if (*buffer_begin == '}')
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::CLOSE_BRACE
 			};
 			tokens.push_back(t);
 			buffer_begin += 1;
@@ -100,13 +174,24 @@ bool tokenize_file(const char* filepath, std::vector<Token*>& tokens)
 		{
 			Token* t = new Token
 			{
-				.type = TokenType::EQUALS
+				.type = TokenType::EQUALS,
+				.flags = TOKEN_FLAG_OPERATOR
 			};
 			tokens.push_back(t);
 			buffer_begin += 1;
 			continue;
 		}
-
+		if (*buffer_begin == '&')
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::AMP,
+				.flags = TOKEN_FLAG_OPERATOR
+			};
+			tokens.push_back(t);
+			buffer_begin += 1;
+			continue;
+		}
 		if (isdigit(*buffer_begin))
 		{
 			char* next = nullptr;
