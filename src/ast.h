@@ -16,6 +16,8 @@ enum class NodeType
 	EXP_SEQUENCE,
 	COMMA,
 	CALL,
+	IF,
+	IF_BRANCH,
 };
 
 enum class BaseType

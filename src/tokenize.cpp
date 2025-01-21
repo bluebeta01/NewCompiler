@@ -56,6 +56,26 @@ bool tokenize_file(const char* filepath, std::vector<Token*>& tokens)
 			buffer_begin += 3;
 			continue;
 		}
+		if (!strncmp("else", buffer_begin, 4) && buffer_end - buffer_begin > 4 && !isalnum(*(buffer_begin + 4)))
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::ELSE
+			};
+			tokens.push_back(t);
+			buffer_begin += 4;
+			continue;
+		}
+		if (!strncmp("if", buffer_begin, 2) && buffer_end - buffer_begin > 2 && !isalnum(*(buffer_begin + 2)))
+		{
+			Token* t = new Token
+			{
+				.type = TokenType::IF
+			};
+			tokens.push_back(t);
+			buffer_begin += 2;
+			continue;
+		}
 		if (!strncmp("->", buffer_begin, 2) && buffer_end - buffer_begin > 2)
 		{
 			Token* t = new Token

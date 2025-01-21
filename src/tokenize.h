@@ -24,6 +24,8 @@ enum class TokenType
 	COLON,
 	COMMA,
 	ARROW,
+	IF,
+	ELSE,
 };
 
 struct Token

@@ -1,5 +1,7 @@
 #include "ast.h"
 
+bool parse_block(const std::vector<Token*>& tokens, int index, Node** block_node, int* next_index);
+
 int node_precedence(NodeType type)
 {
 	switch (type)
@@ -398,6 +400,12 @@ static void print_tree_recurse(FILE* file, Node* tree, int tabs)
 	case NodeType::EXP_SEQUENCE:
 		fprintf(file, "%s", "seq");
 		break;
+	case NodeType::IF:
+		fprintf(file, "%s", "IF");
+		break;
+	case NodeType::IF_BRANCH:
+		fprintf(file, "%s", "IF_BRANCH");
+		break;
 	}
 	fwrite("\n", 1, 1, file);
 	if(tree->left)
@@ -653,32 +661,105 @@ static void prepend_expression(Node** head, Node* expression)
 	(*head)->right = expression;
 }
 
-bool parse_function(std::vector<Token*>& tokens, int index, FunctionDescriptor* function, int* next_index)
+bool parse_if(const std::vector<Token*>& tokens, int index, Node** head, int* next_index)
 {
-	int next = 0;
-	if (!parse_func_declaration(tokens, index, function, &next))
-		return false;
-
-	index = next;
-	if (index >= tokens.size())
-		return false;
 	Token* token = tokens[index];
-
-	if (token->type != TokenType::OPEN_BRACE)
+	if (token->type != TokenType::IF)
 		return false;
 
 	index++;
 	if (index >= tokens.size())
+		return false;;
+	token = tokens[index];
+
+	Node* node;
+	int next;
+	if (!parse_expression(tokens, index, &node, &next))
+		return false;
+
+	Node* if_node = new Node { .type = NodeType::IF };
+	if_node->left = node;
+	node->parent = if_node;
+
+	index = next;
+	if (index >= tokens.size())
 		return false;
 	token = tokens[index];
+
+	if (!parse_block(tokens, index, &node, &next))
+		return false;
+
+	Node* branch_node = new Node { .type = NodeType::IF_BRANCH };
+	branch_node->parent = if_node;
+	if_node->right = branch_node;
+	branch_node->left = node;
+
+	index = next;
+	if (index >= tokens.size())
+		return false;
+	token = tokens[index];
+
+	if (token->type == TokenType::ELSE)
+	{
+		index++;
+		if (index >= tokens.size())
+			return false;
+		token = tokens[index];
+
+		if (!parse_block(tokens, index, &node, &next))
+			return false;
+
+		branch_node->right = node;
+		node->parent = branch_node;
+	}
+
+	*head = if_node;
+	*next_index = next;
+	return true;
+}
+
+bool parse_block(const std::vector<Token*>& tokens, int index, Node** block_node, int* next_index)
+{
+	Token* token = tokens[index];
+	if(token->type != TokenType::OPEN_BRACE)
+		return false;
+
+	index++;
+	if(index >= tokens.size())
+		return false;
+	token = tokens[index];
+
+	Node* head = nullptr;
+	int next = index;
 
 	while (true)
 	{
 		Node* node;
-		if (!parse_expression(tokens, index, &node, &next))
-			return false;
+		if (token->type == TokenType::IF)
+		{
+			if (!parse_if(tokens, index, &node, &next))
+			{
+				puts("Failed to parse if statement");
+				return false;
+			}
 
-		prepend_expression(&function->node, node);
+			if (!head)
+			{
+				head = node;
+			}
+			else
+			{
+				Node* seq = new Node { .type = NodeType::EXP_SEQUENCE };
+				seq->left = head;
+				seq->right = node;
+				head->parent = seq;
+				head = seq;
+			}
+		}
+		else if (parse_expression(tokens, index, &node, &next))
+		{
+			prepend_expression(&head, node);
+		}
 
 		index = next;
 		if (index >= tokens.size())
@@ -690,6 +771,29 @@ bool parse_function(std::vector<Token*>& tokens, int index, FunctionDescriptor* 
 	}
 
 	index++;
+	*next_index = index;
+	*block_node = head;
+	return true;
+}
+
+bool parse_function(std::vector<Token*>& tokens, int index, FunctionDescriptor* function, int* next_index)
+{
+	int next = index;
+	if (!parse_func_declaration(tokens, index, function, &next))
+		return false;
+
+	index = next;
+	if (index >= tokens.size())
+		return false;
+	Token* token = tokens[index];
+
+	if (token->type != TokenType::OPEN_BRACE)
+		return false;
+
+	if (!parse_block(tokens, index, &function->node, &next))
+		return false;
+
+	index = next;
 	*next_index = index;
 	return true;
 }
