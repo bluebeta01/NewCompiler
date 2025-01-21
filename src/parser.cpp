@@ -3,7 +3,11 @@
 
 bool parse_file(ParserContext* ctx, const char* filepath)
 {
-	SourceFile* source_file = new SourceFile {.filepath = filepath};
+	SourceFile* source_file = new SourceFile
+	{
+		.filepath = filepath,
+		.node_allocator = node_allocator_create()
+	};
 
 	if (!tokenize_file(filepath, source_file->tokens))
 	{
@@ -13,7 +17,7 @@ bool parse_file(ParserContext* ctx, const char* filepath)
 
 	int index = 0;
 	FunctionDescriptor func = {};
-	if (!parse_function(source_file->tokens, 0, &func, &index))
+	if (!parse_function(source_file->tokens, 0, source_file->node_allocator, &func, &index))
 	{
 		puts("Failed to parse function");
 		return false;

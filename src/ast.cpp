@@ -1,6 +1,44 @@
 #include "ast.h"
+#include <stdlib.h>
 
-bool parse_block(const std::vector<Token*>& tokens, int index, Node** block_node, int* next_index);
+bool parse_block(const std::vector<Token*>& tokens, int index, NodeAllocator* node_allocator, Node** block_node, int* next_index);
+
+Node* node_alloc(NodeAllocator* allocator)
+{
+	while (allocator->next)
+	{
+		allocator = allocator->next;
+	}
+
+	if (allocator->count == 20)
+	{
+		allocator->next = node_allocator_create();
+		allocator = allocator->next;
+	}
+
+	Node* node = &allocator->data[allocator->count];
+	allocator->count++;
+	return node;
+}
+
+NodeAllocator* node_allocator_create()
+{
+	NodeAllocator* allocator = new NodeAllocator();
+	allocator->data = (Node*)malloc(sizeof(Node) * 20);
+	return allocator;
+}
+
+void node_allocator_free(NodeAllocator* allocator)
+{
+	do
+	{
+		if (allocator->data)
+			free(allocator->data);
+		NodeAllocator* a = allocator->next;
+		free(allocator);
+		allocator = a;
+	} while (allocator);
+}
 
 int node_precedence(NodeType type)
 {
@@ -119,92 +157,102 @@ static bool parse_vardecl_node(const std::vector<Token*>& tokens, int* index, No
 	return false;
 }
 
-static Node* token_to_node(const std::vector<Token*>& tokens, int* index)
+static Node* token_to_node(const std::vector<Token*>& tokens, NodeAllocator* node_allocator, int* index)
 {
 	Token* token = tokens[*index];
+	Node* node = nullptr;
 	switch (token->type)
 	{
 	case TokenType::PLUS:
-		return new Node
-		{
+		node = node_alloc(node_allocator);
+		*node = {
 			.type = NodeType::ADD,
 			.token = token
 		};
+		return node;
 	case TokenType::EQUALS:
-		return new Node
-		{
+		node = node_alloc(node_allocator);
+		*node = {
 			.type = NodeType::ASSIGN,
 			.token = token
 		};
+		return node;
 	case TokenType::COMMA:
-		return new Node
-		{
+		node = node_alloc(node_allocator);
+		*node = {
 			.type = NodeType::COMMA,
 			.token = token
 		};
+		return node;
 	case TokenType::AMP:
-		return new Node
-		{
+		node = node_alloc(node_allocator);
+		*node = {
 			.type = NodeType::REFERENCE,
 			.token = token
 		};
+		return node;
 	case TokenType::MINUS:
-		return new Node
-		{
+		node = node_alloc(node_allocator);
+		*node = {
 			.type = NodeType::SUBTRACT,
 			.token = token
 		};
+		return node;
 	case TokenType::STAR:
+		node = node_alloc(node_allocator);
 		if (*index == 0 || tokens[*index - 1]->flags & TOKEN_FLAG_OPERATOR)
 		{
-			return new Node
-			{
+			*node = {
 				.type = NodeType::DEREFERECE,
 				.token = token
 			};
+			return node;
 		}
-		return new Node
-		{
+		*node = {
 			.type = NodeType::MULTIPLY,
 			.token = token
 		};
+		return node;
 	case TokenType::INT_LITERAL:
-		return new Node
-		{
+		node = node_alloc(node_allocator);
+		*node = {
 			.type = NodeType::INT_LITERAL,
 			.token = token
 		};
+		return node;
 	case TokenType::S16:
 	{
 		Node n = {};
 		if (parse_vardecl_node(tokens, index, &n))
 		{
-			Node* node = new Node(n);
+			node = node_alloc(node_allocator);
+			*node = n;
 			return node;
 		}
 		return nullptr;
 	}
 	case TokenType::IDENTIFIER:
+		node = node_alloc(node_allocator);
 		if (*index + 1 < tokens.size() && tokens[*index + 1]->type == TokenType::OPEN_PAREN)
 		{
-			return new Node
-			{
+			*node = {
 				.type = NodeType::CALL,
 				.token = token,
 				.paren = true
 			};
+			return node;
 		}
 		Node n = {};
 		if (parse_vardecl_node(tokens, index, &n))
 		{
-			Node* node = new Node(n);
+			*node = n;
 			return node;
 		}
-		return new Node
-		{
+		*node = {
 			.type = NodeType::IDENTIFIER,
 			.token = token
 		};
+		return node;
 	}
 
 	return nullptr;
@@ -224,7 +272,7 @@ static bool node_is_right_only(NodeType type)
 	return false;
 }
 
-static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
+static Node* parse_tree(const std::vector<Token*>& tokens, NodeAllocator* node_allocator, int* index)
 {
 	Node* tree_head = nullptr;
 	Node* previous_node = nullptr;
@@ -236,12 +284,12 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 			(*index)++;
 			return tree_head;
 		}
-		Node* node = token_to_node(tokens, index);
+		Node* node = nullptr;
 
 		if (token->type == TokenType::OPEN_PAREN)
 		{
 			(*index)++;
-			node = parse_tree(tokens, index);
+			node = parse_tree(tokens, node_allocator, index);
 
 			//We should now be on the next token. We don't want to increment on the next continue
 			(*index)--;
@@ -274,6 +322,8 @@ static Node* parse_tree(const std::vector<Token*>& tokens, int* index)
 			tree_head = node;
 			continue;
 		}
+
+		node = token_to_node(tokens, node_allocator, index);
 
 		//Return early if the token could not converted to a node which can be appended to the tree
 		if (node == nullptr)
@@ -427,11 +477,11 @@ void print_tree(const char* filepath, Node* tree)
 	fclose(file);
 }
 
-bool parse_expression(const std::vector<Token*>& tokens, int index, Node** node, int* next_index)
+bool parse_expression(const std::vector<Token*>& tokens, int index, NodeAllocator* node_allocator, Node** node, int* next_index)
 {
 	Node* tree_head = nullptr;
 
-	tree_head = parse_tree(tokens, &index);
+	tree_head = parse_tree(tokens, node_allocator, &index);
 	if (!tree_head)
 		return false;
 
@@ -640,7 +690,7 @@ bool parse_func_declaration(const std::vector<Token*>& tokens, int index, Functi
 }
 
 //Prepends and expression to head. Possibly replaces the head if it is not a EXP_SEQUENCE node or it is full
-static void prepend_expression(Node** head, Node* expression)
+static void prepend_expression(Node** head, Node* expression, NodeAllocator* node_allocator)
 {
 	if (!*head)
 	{
@@ -650,7 +700,8 @@ static void prepend_expression(Node** head, Node* expression)
 
 	if ((*head)->type != NodeType::EXP_SEQUENCE || ((*head)->left != nullptr && (*head)->right != nullptr))
 	{
-		Node* node = new Node{ .type = NodeType::EXP_SEQUENCE };
+		Node* node = node_alloc(node_allocator);
+		*node = { .type = NodeType::EXP_SEQUENCE };
 		node->right = expression;
 		node->left = *head;
 		(*head)->parent = node;
@@ -661,7 +712,7 @@ static void prepend_expression(Node** head, Node* expression)
 	(*head)->right = expression;
 }
 
-bool parse_if(const std::vector<Token*>& tokens, int index, Node** head, int* next_index)
+bool parse_if(const std::vector<Token*>& tokens, int index, NodeAllocator* node_allocator, Node** head, int* next_index)
 {
 	Token* token = tokens[index];
 	if (token->type != TokenType::IF)
@@ -674,10 +725,11 @@ bool parse_if(const std::vector<Token*>& tokens, int index, Node** head, int* ne
 
 	Node* node;
 	int next;
-	if (!parse_expression(tokens, index, &node, &next))
+	if (!parse_expression(tokens, index, node_allocator, &node, &next))
 		return false;
 
-	Node* if_node = new Node { .type = NodeType::IF };
+	Node* if_node = node_alloc(node_allocator);
+	*if_node = { .type = NodeType::IF };
 	if_node->left = node;
 	node->parent = if_node;
 
@@ -686,10 +738,11 @@ bool parse_if(const std::vector<Token*>& tokens, int index, Node** head, int* ne
 		return false;
 	token = tokens[index];
 
-	if (!parse_block(tokens, index, &node, &next))
+	if (!parse_block(tokens, index, node_allocator, &node, &next))
 		return false;
 
-	Node* branch_node = new Node { .type = NodeType::IF_BRANCH };
+	Node* branch_node = node_alloc(node_allocator);
+	*branch_node = { .type = NodeType::IF_BRANCH };
 	branch_node->parent = if_node;
 	if_node->right = branch_node;
 	branch_node->left = node;
@@ -706,7 +759,7 @@ bool parse_if(const std::vector<Token*>& tokens, int index, Node** head, int* ne
 			return false;
 		token = tokens[index];
 
-		if (!parse_block(tokens, index, &node, &next))
+		if (!parse_block(tokens, index, node_allocator, &node, &next))
 			return false;
 
 		branch_node->right = node;
@@ -718,7 +771,7 @@ bool parse_if(const std::vector<Token*>& tokens, int index, Node** head, int* ne
 	return true;
 }
 
-bool parse_block(const std::vector<Token*>& tokens, int index, Node** block_node, int* next_index)
+bool parse_block(const std::vector<Token*>& tokens, int index, NodeAllocator* node_allocator, Node** block_node, int* next_index)
 {
 	Token* token = tokens[index];
 	if(token->type != TokenType::OPEN_BRACE)
@@ -737,7 +790,7 @@ bool parse_block(const std::vector<Token*>& tokens, int index, Node** block_node
 		Node* node;
 		if (token->type == TokenType::IF)
 		{
-			if (!parse_if(tokens, index, &node, &next))
+			if (!parse_if(tokens, index, node_allocator, &node, &next))
 			{
 				puts("Failed to parse if statement");
 				return false;
@@ -749,16 +802,17 @@ bool parse_block(const std::vector<Token*>& tokens, int index, Node** block_node
 			}
 			else
 			{
-				Node* seq = new Node { .type = NodeType::EXP_SEQUENCE };
+				Node* seq = node_alloc(node_allocator);
+				*seq = { .type = NodeType::EXP_SEQUENCE };
 				seq->left = head;
 				seq->right = node;
 				head->parent = seq;
 				head = seq;
 			}
 		}
-		else if (parse_expression(tokens, index, &node, &next))
+		else if (parse_expression(tokens, index, node_allocator, &node, &next))
 		{
-			prepend_expression(&head, node);
+			prepend_expression(&head, node, node_allocator);
 		}
 
 		index = next;
@@ -776,7 +830,7 @@ bool parse_block(const std::vector<Token*>& tokens, int index, Node** block_node
 	return true;
 }
 
-bool parse_function(std::vector<Token*>& tokens, int index, FunctionDescriptor* function, int* next_index)
+bool parse_function(std::vector<Token*>& tokens, int index, NodeAllocator* node_allocator, FunctionDescriptor* function, int* next_index)
 {
 	int next = index;
 	if (!parse_func_declaration(tokens, index, function, &next))
@@ -790,7 +844,7 @@ bool parse_function(std::vector<Token*>& tokens, int index, FunctionDescriptor* 
 	if (token->type != TokenType::OPEN_BRACE)
 		return false;
 
-	if (!parse_block(tokens, index, &function->node, &next))
+	if (!parse_block(tokens, index, node_allocator, &function->node, &next))
 		return false;
 
 	index = next;

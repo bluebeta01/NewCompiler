@@ -50,6 +50,13 @@ struct Node
 	TypeDescriptor type_descriptor;
 };
 
+struct NodeAllocator
+{
+	Node* data = nullptr;
+	int count = 0;
+	NodeAllocator* next = nullptr;
+};
+
 struct FunctionParameter
 {
 	const char* name;
@@ -66,9 +73,12 @@ struct FunctionDescriptor
 	bool has_this;
 };
 
+extern Node* node_alloc(NodeAllocator* allocator);
+extern NodeAllocator* node_allocator_create();
+extern void node_allocator_free(NodeAllocator* allocator);
 extern int node_precedence(NodeType type);
-extern bool parse_expression(const std::vector<Token*>& tokens, int index, Node** node, int* next_index);
+extern bool parse_expression(const std::vector<Token*>& tokens, int index, NodeAllocator* node_allocator, Node** node, int* next_index);
 extern bool parse_type(const std::vector<Token*>& tokens, int index, TypeDescriptor* descriptor, int* next_index);
 extern bool parse_func_declaration(const std::vector<Token*>& tokens, int index, FunctionDescriptor* descriptor, int* next_index);
-extern bool parse_function(std::vector<Token*>& tokens, int index, FunctionDescriptor* function, int* next_index);
+extern bool parse_function(std::vector<Token*>& tokens, int index, NodeAllocator* node_allocator, FunctionDescriptor* function, int* next_index);
 extern void print_tree(const char* filepath, Node* tree);

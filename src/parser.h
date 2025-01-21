@@ -1,15 +1,17 @@
 #pragma once
 #include <vector>
 #include "tokenize.h"
+#include "ast.h"
 
 struct ModuleDescriptor
 {
-	const char* name;
+	const char* name = nullptr;
 };
 
 struct SourceFile
 {
-	const char* filepath;
+	const char* filepath = nullptr;
+	NodeAllocator* node_allocator = nullptr;
 	std::vector<Token*> tokens;
 };
 
